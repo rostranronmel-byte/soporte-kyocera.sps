@@ -9,37 +9,32 @@ st.title("🖨️ Control Técnico: Centromatic SPS")
 # 2. Establecer la conexión
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 3. Función para cargar datos (apunta a tu enlace de Google Sheets)
+# 3. Función para cargar datos (sin tildes para evitar errores)
 @st.cache_data(ttl=60)
 def cargar_datos_sps():
-    # Lee la pestaña "Distribución" directamente de tu enlace
-    df = conn.read(worksheet="Distribución")
-    
-    # LIMPIEZA CRÍTICA: Quita espacios y saltos de línea de los encabezados
+    # Busca la pestaña "Distribucion" (Asegúrate que en el Excel esté igual)
+    df = conn.read(worksheet="Distribucion")
+    # Limpia encabezados de basura como espacios o \n
     df.columns = [str(c).strip() for c in df.columns]
-    
-    # Filtramos filas vacías por si acaso
-    df = df.dropna(subset=['Cliente'])
     return df
 
 try:
     df_clientes = cargar_datos_sps()
 
     with st.form("registro_visita"):
-        st.subheader("📝 Registrar Nueva Visita / Entrega")
+        st.subheader("📝 Registrar Nueva Visita")
 
-        # Buscador de clientes basado en tu columna real de "Cliente"
-        lista_nombres = sorted(df_clientes["Cliente"].unique())
+        # Lista de clientes
+        lista_nombres = sorted(df_clientes["Cliente"].dropna().unique())
         cliente_sel = st.selectbox("Seleccione el Cliente:", lista_nombres)
 
-        # Extraer automáticamente Modelo y Serie del cliente seleccionado
+        # Extraer Modelo y Serie automáticamente
         datos_fila = df_clientes[df_clientes["Cliente"] == cliente_sel].iloc[0]
         
         col1, col2 = st.columns(2)
         with col1:
-            # Los datos vienen de tu Excel automáticamente
-            modelo = st.text_input("Modelo Detectado:", value=str(datos_fila["Modelo"]), disabled=True)
-            serie = st.text_input("Serie Detectada:", value=str(datos_fila["Serie"]), disabled=True)
+            st.info(f"**Modelo:** {datos_fila['Modelo']}")
+            st.info(f"**Serie:** {datos_fila['Serie']}")
         
         with col2:
             contador = st.number_input("Lectura de Contador:", min_value=0, step=1)
@@ -47,8 +42,7 @@ try:
 
         notas = st.text_area("Observaciones del Servicio:")
 
-        # Botón para guardar
-        if st.form_submit_button("💾 Guardar Reporte en Google Sheets"):
+        if st.form_submit_button("💾 Guardar Reporte"):
             nuevo_reporte = pd.DataFrame([{
                 "Fecha": pd.Timestamp.now().strftime("%d/%m/%Y %H:%M"),
                 "Cliente": cliente_sel,
@@ -59,15 +53,11 @@ try:
                 "Notas": notas
             }])
 
-            # Guarda en la pestaña 'Reportes' (debe existir en tu Sheet)
+            # Guarda en la pestaña 'Reportes'
             conn.create(worksheet="Reportes", data=nuevo_reporte)
-            st.success(f"✅ ¡Guardado! El reporte de {cliente_sel} se envió correctamente.")
+            st.success(f"✅ ¡Guardado! Reporte de {cliente_sel} enviado.")
             st.balloons()
 
 except Exception as e:
-    st.error(f"Error al conectar con la hoja: {e}")
-    st.info("Asegúrate de que la pestaña se llame 'Distribución' y que en Secrets esté el link correcto.")
-
-# Opcional: Ver tabla de clientes (solo para el admin)
-if st.checkbox("Mostrar base de datos de clientes"):
-    st.dataframe(df_clientes)
+    st.error(f"Error de conexión: {e}")
+    st.info("Revisa que la pestaña del Excel se llame 'Distribucion' (sin tilde).")
