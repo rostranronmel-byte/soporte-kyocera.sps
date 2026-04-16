@@ -1,80 +1,58 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-import os
-from datetime import datetime
 
-# Configuración de la interfaz
-st.set_page_config(page_title="Soporte Kyocera", page_icon="🖨️")
-st.title("🖨️ Control Técnico: Kyocera San Pedro Sula")
+# Configuración visual
+st.set_page_config(page_title="Kyocera SPS Support", page_icon="🖨️")
+st.title("🖨️ Control Técnico Kyocera SPS")
 
-archivo_datos = "datos_maquinas.csv"
+# Conectar a la hoja de Google
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-# Cargar o crear base de datos
-if os.path.exists(archivo_datos):
-    df = pd.read_csv(archivo_datos)
-else:
-    df = pd.DataFrame(columns=["Fecha", "Cliente", "Serie", "Modelo", "Contador", "Toner" "Proxima Visita"])
+# 1. Leer los clientes de la pestaña 'Distribución'
+# ttl="0" sirve para que siempre lea los datos más nuevos
+df_clientes = conn.read(worksheet="Distribución", ttl="0")
 
-# --- SECCIÓN DE REGISTRO ---
-with st.expander("➕ Registrar Nueva Visita / Entrega de Tóner", expanded=True):
-    with st.form("registro_tecnico", clear_on_submit=True):
-        col1, col2 = st.columns(2)
+# Limpiamos nombres de columnas (tu Excel tiene saltos de línea como 'Cliente\n')
+df_clientes.columns = [c.strip() for c in df_clientes.columns]
+
+# --- INTERFAZ ---
+with st.container():
+    st.subheader("Registro de Visita")
+    
+    # Buscador de clientes basado en tu columna "Cliente"
+    lista_clientes = df_clientes["Cliente"].unique()
+    cliente_sel = st.selectbox("Seleccione el Cliente:", lista_clientes)
+    
+    # Extraer datos automáticos (Modelo y Serie)
+    datos = df_clientes[df_clientes["Cliente"] == cliente_sel].iloc[0]
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        # Mostramos los datos que ya tenemos en el Excel
+        st.info(f"**Modelo:** {datos['Modelo']}")
+        st.info(f"**Serie:** {datos['Serie']}")
+    
+    with col2:
+        contador = st.number_input("Contador Actual:", min_value=0, step=1)
+        toners = st.number_input("Tóners Entregados:", min_value=0, step=1)
+
+    notas = st.text_area("Notas del Servicio (Repuestos, fallas, etc.):")
+
+    if st.button("🚀 Guardar Reporte"):
+        # Creamos la fila para la pestaña de Reportes
+        nuevo_dato = pd.DataFrame([{
+            "Fecha": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
+            "Cliente": cliente_sel,
+            "Modelo": datos['Modelo'],
+            "Serie": datos['Serie'],
+            "Contador": contador,
+            "Toners": toners,
+            "Notas": notas
+        }])
         
-        with col1:
-            cliente = st.text_input("Nombre del Cliente")
-            serie = st.text_input("Número de Serie (SN)")
-            modelo = st.selectbox("Modelo del Equipo", [
-                "ECOSYS M2040", "ECOSYS M2640", "ECOSYS M3040", 
-                "ECOSYS M3145", "ECOSYS M3645", "TASKALFA 3501I", 
-                "TASKALFA 4501I", "TASKALFA 5501I", "TASKALFA 406CI", 
-                "TASKALFA 5002I", "TASKALFA 6002I", "TASKALFA 6003I", 
-                "TASKALFA 5053CI", "TASKALFA 6053CI", "Otro"
-            ])
-            
-        with col2:
-            contador = st.number_input("Contador Total de Copias", min_value=0, step=1)
-            toner = st.number_input("Tóners Entregados", min_value=0, step=1)
-            comentarios = st.text_area("Notas Técnicas (Opcional)")
-        
-        boton_guardar = st.form_submit_button("💾 Guardar en Base de Datos")
-
-if boton_guardar:
-    nueva_fila = {
-        "Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"),
-        "Cliente": cliente,
-        "Serie": serie.upper(),
-        "Modelo": modelo,
-        "Contador": contador,
-        "Toner": toner
-    }
-    df = pd.concat([df, pd.DataFrame([nueva_fila])], ignore_index=True)
-    df.to_csv(archivo_datos, index=False)
-    st.success(f"✅ Registro guardado para el equipo {serie.upper()}")
-    st.rerun()
-
-# --- SECCIÓN DE CONSULTA ---
-st.divider()
-st.subheader("🔍 Historial y Búsqueda")
-
-# Filtro rápido por número de serie
-busqueda = st.text_input("Escribe el Número de Serie para filtrar:")
-
-if busqueda:
-    # Filtramos el dataframe original según la búsqueda
-    df_filtrado = df[df['Serie'].str.contains(busqueda.upper(), na=False)]
-    st.write(f"Mostrando resultados para: {busqueda}")
-    st.dataframe(df_filtrado, use_container_width=True)
-else:
-    # Si no hay búsqueda, muestra los últimos 10 registros
-    st.write("Últimos registros guardados:")
-    st.dataframe(df.tail(10), use_container_width=True)
-
-# Botón para descargar a Excel/CSV por si ocupas mandar reporte a la oficina
-if not df.empty:
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Descargar todo el historial (CSV)",
-        data=csv,
-        file_name='reporte_kyocera.csv',
-        mime='text/csv',
-    )
+        # Guardar en una pestaña llamada "Reportes"
+        # Nota: Debes crear una pestaña llamada 'Reportes' en tu Google Sheet
+        conn.create(worksheet="Reportes", data=nuevo_dato)
+        st.success("¡Datos guardados correctamente en Google Sheets!")
+        st.balloons()
