@@ -3,62 +3,53 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
 # 1. Configuración de la App
-st.set_page_config(page_title="Centromatic SPS", page_icon="🖨️", layout="centered")
+st.set_page_config(page_title="Centromatic SPS", page_icon="🖨️")
 st.title("🖨️ Control Técnico: Centromatic SPS")
 
-# Definimos la URL de forma ultra-limpia
+# 2. Link Directo
 URL_EXCEL = "https://docs.google.com/spreadsheets/d/1JsKz8v15giS-wHWPOc8nYYvMUIqoQGVgzLL_EgkCuGY/edit?usp=sharing"
 
-# 2. Conexión
+# 3. Conexión (Añadimos ttl=0 para que no guarde basura)
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-@st.cache_data(ttl=5)
-def cargar_datos():
-    # El secreto aquí es pasar la URL directamente y forzar el refresco
-    df = conn.read(spreadsheet=URL_EXCEL, worksheet="Distribucion")
-    # Limpiamos los nombres de las columnas por si tienen espacios
-    df.columns = [str(c).strip() for c in df.columns]
-    return df
-
 try:
-    df_clientes = cargar_datos()
+    # Forzamos la lectura sin caché para limpiar el error
+    df = conn.read(spreadsheet=URL_EXCEL, worksheet="Distribucion", ttl=0)
+    df.columns = [str(c).strip() for c in df.columns]
 
-    if not df_clientes.empty:
-        with st.form("registro_visita"):
-            st.subheader("Nueva Entrada de Servicio")
+    with st.form("registro_centromatic"):
+        st.subheader("Registro de Visita Técnica")
+        
+        nombres_clientes = sorted(df["Cliente"].dropna().unique())
+        cliente_sel = st.selectbox("Seleccione el Cliente:", nombres_clientes)
+        
+        datos_equipo = df[df["Cliente"] == cliente_sel].iloc[0]
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.info(f"**Modelo:** {datos_equipo['Modelo']}")
+            st.info(f"**Serie:** {datos_equipo['Serie']}")
+        
+        with col2:
+            contador = st.number_input("Lectura de Contador:", min_value=0, step=1)
+            toners = st.number_input("Tóners Entregados:", min_value=0, step=1)
             
-            # Buscamos la columna de Clientes
-            lista_clientes = sorted(df_clientes["Cliente"].unique())
-            cliente_sel = st.selectbox("Seleccione el Cliente:", lista_clientes)
+        notas = st.text_area("Notas del Servicio:")
+        
+        if st.form_submit_button("💾 Guardar"):
+            nuevo_reg = pd.DataFrame([{
+                "Fecha": pd.Timestamp.now().strftime("%d/%m/%Y %H:%M"),
+                "Cliente": cliente_sel,
+                "Modelo": datos_equipo['Modelo'],
+                "Serie": datos_equipo['Serie'],
+                "Contador": contador,
+                "Toners": toners,
+                "Notas": notas
+            }])
             
-            # Filtramos datos del equipo seleccionado
-            info_equipo = df_clientes[df_clientes["Cliente"] == cliente_sel].iloc[0]
-            
-            c1, c2 = st.columns(2)
-            with c1:
-                st.success(f"**Modelo:** {info_equipo['Modelo']}")
-                st.success(f"**Serie:** {info_equipo['Serie']}")
-            with c2:
-                contador = st.number_input("Contador actual:", min_value=0, step=1)
-                toners = st.number_input("Tóners entregados:", min_value=0, step=1)
-            
-            notas = st.text_area("Observaciones:")
-            
-            if st.form_submit_button("💾 Guardar Reporte"):
-                nuevo_dato = pd.DataFrame([{
-                    "Fecha": pd.Timestamp.now().strftime("%d/%m/%Y %H:%M"),
-                    "Cliente": cliente_sel,
-                    "Modelo": info_equipo['Modelo'],
-                    "Serie": info_equipo['Serie'],
-                    "Contador": contador,
-                    "Toners": toners,
-                    "Notas": notas
-                }])
-                conn.create(spreadsheet=URL_EXCEL, worksheet="Reportes", data=nuevo_dato)
-                st.balloons()
-                st.success("¡Datos enviados correctamente!")
-    else:
-        st.warning("No se encontraron datos en la pestaña 'Distribucion'.")
+            conn.create(spreadsheet=URL_EXCEL, worksheet="Reportes", data=nuevo_reg)
+            st.success(f"¡Registro de {cliente_sel} guardado!")
+            st.balloons()
 
 except Exception as e:
-    st.error(f"Error de conexión: Asegúrate de que el Excel sea 'Editor' para todos. Detalles: {e}")
+    st.error(f"Error detectado: {e}")
