@@ -6,15 +6,15 @@ import pandas as pd
 st.set_page_config(page_title="Centromatic SPS", page_icon="🖨️")
 st.title("🖨️ Control Técnico: Centromatic SPS")
 
-# Pongo tu link aquí directamente para que no dependa de los Secrets
+# URL Directa para evitar el Error 400 de los Secrets
 URL_EXCEL = "https://docs.google.com/spreadsheets/d/1JsKz8v15giS-wHWPOc8nYYvMUIqoQGVgzLL_EgkCuGY/edit?usp=sharing"
 
 # 2. Conexión
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=10) # Bajamos el tiempo para que refresque rápido
 def cargar_datos():
-    # Leemos la pestaña Distribucion usando el link directo
+    # Leemos la pestaña Distribucion
     df = conn.read(spreadsheet=URL_EXCEL, worksheet="Distribucion", usecols=[0,1,2,3])
     df.columns = [str(c).strip() for c in df.columns]
     return df
@@ -50,7 +50,7 @@ try:
                 "Notas": notas
             }])
             conn.create(spreadsheet=URL_EXCEL, worksheet="Reportes", data=nuevo_reg)
-            st.success(f"¡Registro de {cliente_sel} guardado!")
+            st.success(f"¡Registro de {cliente_sel} guardado exitosamente!")
             st.balloons()
 
 except Exception as e:
